@@ -6,14 +6,14 @@ on:
       - main
     paths:
       - "python-app/**"
-      - ".github/workflows/python-ecs.yml"
+      - ".github/workflows/python-ecs.yaml"
 
   pull_request:
     branches:
       - main
     paths:
       - "python-app/**"
-      - ".github/workflows/python-ecs.yml"
+      - ".github/workflows/python-ecs.yaml"
 
   workflow_dispatch:
 
