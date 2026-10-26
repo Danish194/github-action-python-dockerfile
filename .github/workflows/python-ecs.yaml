@@ -5,14 +5,16 @@ on:
     branches:
       - main
     paths:
-      - "python-app/**"
+      - "app.py"
+      - "Dockerfile"
       - ".github/workflows/python-ecs.yaml"
 
   pull_request:
     branches:
       - main
     paths:
-      - "python-app/**"
+      - "app.py"
+      - "Dockerfile"
       - ".github/workflows/python-ecs.yaml"
 
   workflow_dispatch:
@@ -35,10 +37,6 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: ./python-app
 
     steps:
       # 1. Get Python code from GitHub
