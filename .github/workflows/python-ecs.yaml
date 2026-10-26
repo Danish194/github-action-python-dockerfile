@@ -1,0 +1,114 @@
+name: Python CI/CD - ECR and ECS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "python-app/**"
+      - ".github/workflows/python-ecs.yml"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "python-app/**"
+      - ".github/workflows/python-ecs.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPOSITORY: my-first-docker-app
+  ECS_CLUSTER: my-first-fargate-cluster
+  ECS_SERVICE: my-python-service
+  ECS_TASK_FAMILY: my-python-task
+  CONTAINER_NAME: python-container
+
+concurrency:
+  group: python-ecs-deployment
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./python-app
+
+    steps:
+      # 1. Get Python code from GitHub
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Setup Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Check Python syntax
+      - name: Check Python code
+        run: python -m py_compile app.py
+
+      # Steps below run only for pushes to main
+      # or manual workflow runs, not pull requests.
+
+      # 4. Connect GitHub Actions to AWS
+      - name: Configure AWS credentials
+        if: github.event_name != 'pull_request'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 5. Verify AWS connection
+      - name: Check AWS identity
+        if: github.event_name != 'pull_request'
+        run: aws sts get-caller-identity
+
+      # 6. Login to Amazon ECR
+      - name: Login to Amazon ECR
+        if: github.event_name != 'pull_request'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 7. Build and push Docker image
+      - name: Build and push Docker image
+        if: github.event_name != 'pull_request'
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+          docker build -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+
+          echo "image=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      # 8. Update ECS task definition
+      - name: Update ECS task definition
+        if: github.event_name != 'pull_request'
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.ECS_TASK_FAMILY }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      # 9. Deploy updated image to ECS
+      - name: Deploy to Amazon ECS
+        if: github.event_name != 'pull_request'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
